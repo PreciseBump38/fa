@@ -3887,31 +3887,29 @@ float4 ShieldCybranPS( EFFECT_VERTEX vertex, uniform float alpha ) : COLOR
     float3 specular = tex2D( specularSampler, vertex.texcoord1.xy );
     float3 specular2 = tex2D( specularSampler, vertex.texcoord1.zw );
 
-    // Color wackiness
-    float3 color2 = (albedo2.b * specular2.g * 3 );
-    float3 color3 = specular2.g * albedo.a;
-    float3 color4 = ((albedo2.g - specular2.b ) * specular.b) * albedo.a;
-    float3 finalColor = float3( 0.05, 0.0, 0.3 ) + color4 - color2 * color3;
+    float3 color1 = albedo2.b * specular2.g * 3 * specular2.g * albedo.a;
+    float3 color2 = (albedo2.g - specular2.b) * specular.b * albedo.a;
+    float3 finalColor = float3( 0.05, 0.0, 0.3 ) + color2 - color1;
 
     // Adjust color of shield based on its health percentage
     float3 colorMod1 = lerp(float3( 0.2, 0, 0.0 ), finalColor, 0.5);
-    colorMod1 = lerp( finalColor, (colorMod1 - finalColor) + (color4 + colorMod1), sin(frac( 0.06 * vertex.material.x) * 3.14) );
+    colorMod1 = lerp( finalColor, (colorMod1 - finalColor) + (color2 + colorMod1), sin(frac( 0.06 * vertex.material.x) * 3.14) );
     finalColor = lerp( colorMod1, finalColor, vertex.material.y);
 
     finalColor += (albedo.r + albedo2.r) * 0.1;
     finalColor -= (1 - albedo.a);
 
-    float clradd = (finalColor.r + finalColor.g + finalColor.b);
+    float coloradd = (finalColor.r + finalColor.g + finalColor.b);
 
-    if (clradd < 0.1)
+    if (coloradd < 0.1)
     {
         finalColor = float3( 0.15, 0.15, 0.3 );
     }
     else
     {
-        if (clradd > 0.1)
+        if (coloradd > 0.1)
         {
-            if (clradd < 0.2)
+            if (coloradd < 0.2)
                 finalColor = specular.b;
         }
     }
@@ -3956,17 +3954,15 @@ float4 ShieldAeonPS( EFFECT_NORMALMAPPED_VERTEX vertex ) : COLOR
     float3 specular2 = tex2D( specularSampler, vertex.texcoord1.xy );
     float3 normal = ComputeNormal( normalsSampler, vertex.texcoord1.zw * 4, rotationMatrix);
 
-    float dotLightNormal = dot(sunDirection,normal);
     float phongAmount = saturate( dot( reflect( -vertex.viewDirection, normal), vertex.viewDirection)) * 0.6;
     float3 environment = texCUBE( environmentSampler, reflect( -vertex.viewDirection, normal));
 
-    // Magic
     float3 terrainBand = albedo.b * 0.5;
     float3 color1 = phongAmount + environment - albedo.ggg;
-    float3 color2 = (specular.rrr) * lerp( 0.6, 1.3, sin(frac( 0.015 * time) * 3.14));
-    float3 color3 = (specular2.rrr) * lerp( 2.0, 2.2, sin(frac( 0.0045 * time) * 3.14));
+    float factor1 = specular.r * lerp( 0.6, 1.3, sin(frac( 0.015 * time) * 3.14));
+    float factor2 = specular2.r * lerp( 2.0, 2.2, sin(frac( 0.0045 * time) * 3.14));
 
-    float3 finalColor = (color1 * color2) * color3;
+    float3 finalColor = color1 * factor1 * factor2;
     float3 color4 = (finalColor * normal.rgb) * 0.65 + finalColor;
     finalColor = color4 * environment * albedo.a;
 
@@ -3998,49 +3994,37 @@ float4 ShieldAeonLoFiPS( LOFIEFFECT_VERTEX vertex, uniform float alpha ) : COLOR
 ///
 float4 ShieldSeraphimPS( EFFECT_NORMALMAPPED_VERTEX vertex ) : COLOR
 {
-    if ( 1 == mirrored )
-        clip(vertex.depth);
+    if ( 1 == mirrored ) clip(vertex.depth);
 
-    float4 normal_pixel = tex2D( normalsSampler, vertex.texcoord1.zw );
     float3x3 rotationMatrix = float3x3( vertex.binormal, vertex.tangent, vertex.normal );
     float3 normal = ComputeNormal( normalsSampler, vertex.texcoord1.zw, rotationMatrix );
     float4 uvaddress = tex2D( normalsSampler, vertex.texcoord1.xy );
     float2 texcoord = vertex.texcoord0.xy + (uvaddress.rb * 0.1);
     float4 specular = tex2D( specularSampler, texcoord );
 
-    float m = abs( normal_pixel.g - 0.5 );
     const float max_brightness = 0.453;
     float dp = abs( cos(dot( float4(0,1,0,0), normal )) );
     float channel_color = max_brightness - clamp((1.0 - dp), 0, max_brightness );
-    float t = abs(dot(float4(0,1,0,0), normalize(vertex.normal)));
-    float time_cutoff = 0.753;
-    float dp2 = abs(dot(vertex.viewDirection,normal));
+    float relative_height = abs(dot(float4(0,1,0,0), normalize(vertex.normal)));
+    float height_cutoff = 0.753;
+    float ndotv = abs(dot(vertex.viewDirection,normal));
 
-    ///If we are not close enough to the top of the shield dome...
-    if( t < time_cutoff )
-    {
-        m = 1.0;	/// This alpha multiple won't change alpha (So we are not fading to near transparency yet).
-    }
-    else
-    {
-        // NOTE: From right to left in the equation.
-        // Get a percentage multiple of how close we are to the top of the dome from the
-        // point where we want to start an alpha gradient to (close to) transparency. Using that
-        // we mutliply by 0.7 in order to get a percentage of a percentage multiple that is less than one.
-        // Then that is all subtracted from one, the closer we are to the top of the dome, the more we
-        // are subtracting 0.7 from 1.0 and the closer our final percentage multiple is to 0.4, where the
-        // final percentage multiple ('m') starts out at one. 0.7 is used to ensure that we do not go to complete
-        // transparency and retain some feeling of a sphere around the top area of the dome.
-        m = 1.0 - 0.7 * (t - time_cutoff) / (1.0 - time_cutoff);
+    float m;
+    if( relative_height < height_cutoff ){
+        m = 1.0;
+    } else {
+        // Decrease the factor linearly to 0.3 at the top
+        m = 1.0 - 0.7 * (relative_height - height_cutoff) / (1.0 - height_cutoff);
     }
 
     ///Compute the final translucency value.
-    float alpha = m *( dp2 * 0.3 + channel_color )*1.75;
+    float alpha = m *( ndotv * 0.3 + channel_color )*1.75;
     alpha *= shieldWaterAbsorption(vertex.depth.x);
 
-    // Multiples(0.425,0.76274,1.0) are to give a blue tint. The dot product of the normal and the world up vector is squared
+    // The dot product of the normal and the world up vector is squared
     // so that the blue and whitish color fade off in an exponential gradient.
-    return  float4( 0.425 * dp * dp * specular.r, 0.76274 * dp * dp * specular.g, 1.0 * dp * dp * specular.b, alpha );
+    float3 color = float3(0.425, 0.76274, 1.0) * dp * dp * specular.rgb;
+    return  float4( color, alpha );
 }
 
 /// ShieldFillPS()
