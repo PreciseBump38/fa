@@ -3827,38 +3827,33 @@ float4 ShieldCybranPS( EFFECT_NORMALMAPPED_VERTEX vertex, uniform float alpha ) 
 
     float3 color1 = albedo2.b * specular2.g * 3 * specular2.g * albedo.a;
     float3 color2 = (albedo2.g - specular2.b) * specular.b * albedo.a;
-    float3 finalColor = float3( 0.05, 0.0, 0.3 ) + color2 - color1;
+    float3 color = float3( 0.05, 0.0, 0.3 ) + color2 - color1;
 
     // Adjust color of shield based on its health percentage
-    float3 colorMod1 = lerp(float3( 0.2, 0, 0.0 ), finalColor, 0.5);
-    colorMod1 = lerp( finalColor, (colorMod1 - finalColor) + (color2 + colorMod1), sin(frac( 0.06 * vertex.material.x) * 3.14) );
-    finalColor = lerp( colorMod1, finalColor, vertex.material.y);
+    float3 colorMod1 = lerp(float3( 0.2, 0, 0.0 ), color, 0.5);
+    colorMod1 = lerp( color, (colorMod1 - color) + (color2 + colorMod1), sin(frac( 0.06 * vertex.material.x) * 3.14) );
+    color = lerp( colorMod1, color, vertex.material.y);
 
-    finalColor += (albedo.r + albedo2.r) * 0.1;
-    finalColor -= (1 - albedo.a);
+    color += (albedo.r + albedo2.r) * 0.1;
+    color -= (1 - albedo.a);
 
-    float coloradd = (finalColor.r + finalColor.g + finalColor.b);
-
-    if (coloradd < 0.1)
-    {
-        finalColor = float3( 0.15, 0.15, 0.3 );
-    }
-    else
-    {
-        if (coloradd > 0.1)
-        {
+    float coloradd = (color.r + color.g + color.b);
+    if (coloradd < 0.1) {
+        color = float3( 0.15, 0.15, 0.3 );
+    } else {
+        if (coloradd > 0.1) {
             if (coloradd < 0.2)
-                finalColor = specular.b;
+                color = specular.b;
         }
     }
 
-    finalColor += ((albedo.r + albedo2.r) * float3( 0.0, 0.0, 0.3 ));
+    color += ((albedo.r + albedo2.r) * float3( 0.0, 0.0, 0.3 ));
 
     // Alpha
     alpha += (albedo.r + albedo2.r) * 0.2;
     alpha *= shieldWaterAbsorption(vertex.depth.x);
 
-    return float4(finalColor, alpha);
+    return float4(color, alpha);
 }
 
 float4 ShieldCybranLoFiPS( LOFIEFFECT_VERTEX vertex, uniform float alpha ) : COLOR
@@ -3900,19 +3895,19 @@ float4 ShieldAeonPS( EFFECT_NORMALMAPPED_VERTEX vertex ) : COLOR
     float factor1 = specular.r * lerp( 0.6, 1.3, sin(frac( 0.015 * time) * 3.14));
     float factor2 = specular2.r * lerp( 2.0, 2.2, sin(frac( 0.0045 * time) * 3.14));
 
-    float3 finalColor = color1 * factor1 * factor2;
-    float3 color4 = (finalColor * normal.rgb) * 0.65 + finalColor;
-    finalColor = color4 * environment * albedo.a;
+    float3 color = color1 * factor1 * factor2;
+    float3 color2 = (color * normal.rgb) * 0.65 + color;
+    color = color2 * environment * albedo.a;
 
     // Adjust color of shield based on its health percentage
-    float3 colorMod1 = lerp(float3( 0.7, 0.3, 0.3 ), finalColor, 0.9 );
-    float3 colorMod2 = lerp( finalColor, colorMod1, sin(frac( 0.05 * vertex.material.x) * 3.14) );
-    finalColor = lerp( colorMod1, finalColor, vertex.material.y);
+    float3 colorMod1 = lerp(float3( 0.7, 0.3, 0.3 ), color, 0.9 );
+    float3 colorMod2 = lerp( color, colorMod1, sin(frac( 0.05 * vertex.material.x) * 3.14) );
+    color = lerp( colorMod1, color, vertex.material.y);
 
     float alpha = 0.707 * ((environment.r + environment.g + environment.b) * 0.25) + terrainBand.r;
     alpha *= shieldWaterAbsorption(vertex.depth.x);
 
-    return float4( lerp( colorMod1, finalColor, vertex.material.y), alpha);
+    return float4( lerp( colorMod1, color, vertex.material.y), alpha);
 }
 
 float4 ShieldAeonLoFiPS( LOFIEFFECT_VERTEX vertex, uniform float alpha ) : COLOR
