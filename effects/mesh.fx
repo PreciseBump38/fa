@@ -3816,7 +3816,60 @@ float4 ShieldLoFiPS( LOFIEFFECT_VERTEX vertex ) : COLOR
 /// ShieldCybranPS
 ///
 ///
+float3 ComputeShieldIslands(float4 albedo, float3 specular, float3 specular2, float terrainBand, float health)
+{
+    float3 factor1 = albedo.b * specular2.g * specular2.g * 3;
+    float3 factor2 = (albedo.g - specular2.b) * specular.b;
+    float3 color = float3( 0.05, 0.0, 0.3 ) + factor2 - factor1;
+
+    // Adjust color of shield based on its health percentage
+    float3 colorMod1 = float3( 0.2, 0, 0 ) + factor2;
+    colorMod1 = lerp( color, colorMod1, sin(frac( 0.06 * time) * 3.14) );
+    color = lerp( colorMod1, color, health);
+
+    color += terrainBand;
+    color -= (1 - albedo.a);
+    
+    float alpha = 1;
+    float colorMask = (color.r + color.g + color.b);
+    if (colorMask < 0.1) {
+        // Add base color
+        color = float3( 0.15, 0.15, 0.3 );
+    } else {
+        if (colorMask > 0.1) {
+            if (colorMask < 0.2)
+                // Add outlines to islands
+                color = specular.b;
+        }
+    }
+    return color;
+}
+
 float4 ShieldCybranPS( EFFECT_NORMALMAPPED_VERTEX vertex, uniform float alpha ) : COLOR
+{
+    if ( 1 == mirrored ) clip(vertex.depth);
+
+    float4 albedo = tex2D( albedoSampler, vertex.texcoord0.zw );
+    float3 specular = tex2D( specularSampler, vertex.texcoord1.xy );
+    float3 specular2 = tex2D( specularSampler, vertex.texcoord1.zw );
+    float3 specular3 = tex2D( specularSampler, vertex.texcoord0.xy );
+    vertex.texcoord1.w += time * -0.0015 - 0.13;
+    float3 specular4 = tex2D( specularSampler, vertex.texcoord1.zw );
+    float terrainBand = albedo.r * 0.2;
+
+    float3 islands1 = ComputeShieldIslands(albedo, specular, specular2, terrainBand, vertex.material.y);
+    float3 islands2 = ComputeShieldIslands(albedo, specular3, specular4, terrainBand, vertex.material.y);
+    float3 color = (islands1 + islands2) * 0.5;
+
+    color += terrainBand * 3 * float3( 0, 0, 1);
+
+    // Alpha
+    alpha += terrainBand * 2;
+
+    return float4(color, alpha);
+}
+
+float4 ShieldCybranLegacyPS( EFFECT_NORMALMAPPED_VERTEX vertex, uniform float alpha ) : COLOR
 {
     if ( 1 == mirrored ) clip(vertex.depth);
 
@@ -7560,8 +7613,29 @@ technique ShieldCybran_MedFidelity
         RasterizerState( Rasterizer_Cull_None )
         DepthState( Depth_Enable_LessEqual_Write_None )
 
-        VertexShader = compile vs_1_1 ShieldNormalVS( 1,1,2,1, -0.01,0, -0.002,0, 0,0.0012, 0.001,-0.0015 );
+        VertexShader = compile vs_1_1 ShieldNormalVS( 4,1,2,1, 0,0.0012, -0.002,0, 0,0.0012, 0.001,-0.0015 );
         PixelShader = compile ps_2_0 ShieldCybranPS(0.17);
+    }
+}
+
+technique ShieldCybran_Legacy_MedFidelity
+<
+    string abstractTechnique = "ShieldCybranLegacy";
+    int fidelity = FIDELITY_MEDIUM;
+
+    string cartographicTechnique = "CartographicShield";
+    int renderStage = STAGE_POSTWATER + STAGE_POSTEFFECT;
+    int parameter = PARAM_FRACTIONHEALTH;
+>
+{
+    pass P0
+    {
+        AlphaState( AlphaBlend_SrcAlpha_InvSrcAlpha_Write_RGBA )
+        RasterizerState( Rasterizer_Cull_None )
+        DepthState( Depth_Enable_LessEqual_Write_None )
+
+        VertexShader = compile vs_1_1 ShieldNormalVS( 1,1,2,1, -0.01,0, -0.002,0, 0,0.0012, 0.001,-0.0015 );
+        PixelShader = compile ps_2_0 ShieldCybranLegacyPS(0.17);
     }
     pass P1
     {
@@ -7570,7 +7644,7 @@ technique ShieldCybran_MedFidelity
         RasterizerState( Rasterizer_Cull_None )
 
         VertexShader = compile vs_1_1 ShieldPositionNormalOffsetVS( 0.01, 1,1,4,1, 0.01,0, -0.002,0, 0,0.0012, 0.001,-0.003 );
-        PixelShader = compile ps_2_0 ShieldCybranPS(0.17);
+        PixelShader = compile ps_2_0 ShieldCybranLegacyPS(0.17);
     }
 }
 
