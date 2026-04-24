@@ -3748,22 +3748,23 @@ float4 ShieldPS( EFFECT_NORMALMAPPED_VERTEX vertex ) : COLOR
     if ( 1 == mirrored ) clip(vertex.depth);
 
     float4 colorMask = tex2D( albedoSampler, vertex.texcoord0.xy);
+    float terrainBand = colorMask.b * 0.95;
     float4 albedo = tex2D( albedoSampler, vertex.texcoord0.zw);
-    float3 normal = tex2D( secondarySampler, vertex.texcoord1.xy ).gaa * 2 - 1;
-    normal.z = sqrt( 1 - normal.x*normal.x - normal.y*normal.y );
+    float3 secondary = tex2D( secondarySampler, vertex.texcoord1.xy ).gaa * 2 - 1;
+    secondary.z = sqrt( 1 - secondary.x*secondary.x - secondary.y*secondary.y );
     float3 specular = tex2D( specularSampler, vertex.texcoord1.zw );
 
-    // Combine albedo and normal sampler for a final color
-    float4 color = float4( mul( albedo.rgr, normal.rgb ) + float3( 0, 0, 0.25), 1.0);
+    // Combine albedo and secondary sampler for a final color
+    float4 color = float4( mul( albedo.rgr, secondary.rgb ) + float3( 0, 0, 0.25), 1.0);
 
     // Using the specular sampler, with 3 layers of noise in color chanels modulate the
     // alpha channel for the current pixel
     if( specular.g <= albedo.r )
     {
         if( specular.b >= albedo.g )
-            color.a = ( color.b >= normal.b ) ? 0.12 : lerp( 0.05, 0, sin(frac( 0.01 * time) * 3.14) );
+            color.a = ( color.b >= secondary.b ) ? 0.12 : lerp( 0.05, 0, sin(frac( 0.01 * time) * 3.14) );
         else
-            color.a = ( normal.b >= albedo.r ) ? 0.2 : lerp( 0.01, 0.1, sin(frac( 0.01 * time) * 3.14) );
+            color.a = ( secondary.b >= albedo.r ) ? 0.2 : lerp( 0.01, 0.1, sin(frac( 0.01 * time) * 3.14) );
     }
     else
     {
@@ -3779,10 +3780,12 @@ float4 ShieldPS( EFFECT_NORMALMAPPED_VERTEX vertex ) : COLOR
     float4 colorMod1 = lerp(float4( 0.5, 0.0, 0.0, 0.05 ), color, 0.5);
     colorMod1 = lerp( color, colorMod1 + color, sin(frac( 0.06 * time) * 3.14) );
     color = lerp( colorMod1, color, vertex.material.y );
-    color += (colorMask.b * 0.95);
 
-    // Add in our alpha channel to mask UV pinching at the top of the sphere
-    color.a *= colorMask.a;// * 0.75;
+    color += terrainBand;
+
+    // Mask UV pinching at the top of the sphere
+    color.a *= colorMask.a;
+
     color.a *= shieldWaterAbsorption(vertex.depth.x);
 
     return color;
