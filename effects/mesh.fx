@@ -3928,18 +3928,6 @@ float3 ComputeShieldIslands(float4 albedo, float3 specular, float3 specular2, fl
     color += terrainBand;
     color -= (1 - albedo.a);
     
-    float alpha = 1;
-    float colorMask = (color.r + color.g + color.b);
-    if (colorMask < 0.1) {
-        // Add base color
-        color = float3( 0.15, 0.15, 0.3 );
-    } else {
-        if (colorMask > 0.1) {
-            if (colorMask < 0.2)
-                // Add outlines to islands
-                color = specular.b;
-        }
-    }
     return color;
 }
 
@@ -3963,6 +3951,19 @@ float4 ShieldCybranPS( EFFECT_NORMALMAPPED_VERTEX vertex, uniform float alpha ) 
 
     // Alpha
     alpha += terrainBand * 2;
+
+    alpha = color.b;
+    float colorMask = (color.r + color.g + color.b);
+    if (colorMask < 0.1) {
+        alpha = 0;
+    } else {
+        if (colorMask > 0.1) {
+            if (colorMask < 0.2)
+                // Add outlines to islands
+                alpha = specular.b;
+        }
+    }
+
 
     return float4(color, alpha);
 }
