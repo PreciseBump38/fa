@@ -3735,9 +3735,107 @@ float shieldWaterAbsorption(float depth) {
     float factor = 1.0;
     if (surfaceElevation > 0) {
         if (depth < 0) factor = 0.6;
+        // this might break with custom water ramps
         factor *= 1 - tex1D(WaterRampSampler, (-depth / (surfaceElevation - abyssElevation))).w;
     }
     return factor;
+}
+
+float3 PBR2(
+    float3 v,
+    float depth,
+    float roughness,
+    float3 n,
+    // Common material specular values:
+    // water: .02
+    // plastic: .03-.05
+    // most materials: .04
+    // diamond: .17
+    float facingSpecular = .04,
+    float ao = 1
+) : COLOR0
+{
+    // See https://blog.selfshadow.com/publications/s2013-shading-course/
+
+    float3 reflection = reflect(-v, n);
+
+    // We can't use texCUBElod so we need to use a workaround
+    float lod = roughness * 10;
+    float scale = exp2(lod);
+    float3 env_reflection = texCUBEgrad(environmentSampler, reflection, float3(scale/256, 0, 0), float3(0, scale/256, 0));
+
+    float2 envBRDFlookuptexture = tex2D(anisotropicSampler, float2(dot(n, v), 1 - roughness)).rg;
+    // We don't have good ao textures to counteract fresnel highlights showing in unplausible places,
+    // so we have to tune them down a bit across the board.
+    envBRDFlookuptexture.g *= 0.5;
+
+    //////////////////////////////
+    // Compute sun reflection
+    //
+
+    // specular reflections of dielectrics mostly disappear underwater
+    if (depth < 0) {
+        facingSpecular = facingSpecular * 0.05;
+    }
+    float3 F0 = float3(facingSpecular, facingSpecular, facingSpecular);
+    float3 l = sunDirection;
+    float3 h = normalize(v + l);
+    float nDotL = max(dot(n, l), 0.0);
+    // Normal maps can cause an angle > 90° between n and v which would
+    // cause artifacts if we don't take some countermeasures
+    float nDotV = abs(dot(n, v)) + 0.001;
+
+    float3 sunLight = sunDiffuse * lightMultiplier;
+
+    // Cook-Torrance BRDF
+    float3 F = FresnelSchlick(max(dot(h, v), 0.0), F0);
+    float NDF = NormalDistribution(n, h, roughness);
+    float G = GeometrySmith(n, nDotV, l, roughness);
+
+    // For point lights we need to multiply with Pi
+    float3 numerator = PI * NDF * G * F;
+    // add 0.0001 to avoid division by zero
+    float denominator = 4.0 * nDotV * nDotL + 0.0001;
+    float3 reflected = numerator / denominator;
+    
+    float3 irradiance = sunLight * nDotL;
+    float3 color = reflected * irradiance;
+
+    //////////////////////////////
+    // Compute environment reflection
+    //
+    float3 kS = FresnelSchlickRoughness(nDotV, F0, roughness);
+ 
+    // We need to do this to stay consistent with ComputeLight()
+    float3 shadowColor = (1 - (sunDiffuse * nDotL + sunAmbient)) * shadowFill;
+    float3 ambient = sunAmbient * lightMultiplier + shadowColor;
+
+    // As maps were not created with this shader in mind we need to do some tuning to match
+    // the shadows of the terrain. This is very non-physical and uses empirical values.
+    float shadowCorrection = saturate((ambient.r + ambient.g + ambient.b) / 3);
+    shadowCorrection = lerp(shadowCorrection, 1, nDotL);
+    env_reflection *= shadowCorrection;
+    env_reflection += ambient * 0.15;
+
+    float3 specular = env_reflection * (kS * envBRDFlookuptexture.r + envBRDFlookuptexture.g);
+    color += specular * ao;
+
+    return color;
+}
+
+float4 EnvironmentPS( NORMALMAPPED_VERTEX vertex ) : COLOR
+{
+    float3 tint = float3(0.5, 0.5, 1);
+    float opacity = 0.1;
+
+    float4 color;
+    color.a = 1;
+    float roughness = 0.2;
+    color.rgb = PBR2(vertex.viewDirection, vertex.depth , roughness, normalize(vertex.normal));
+    //Tint according to shield color
+    color.rgb = lerp(color.rgb, tint * color.rgb, 0.6);
+    color.rgb += tint * opacity;
+    return color;
 }
 
 /// ShieldPS
@@ -7563,6 +7661,15 @@ technique ShieldUEF_MedFidelity
 >
 {
     pass P0
+    {
+        AlphaState( AlphaBlend_SrcAlpha_One_Write_RGB )
+        RasterizerState( Rasterizer_Cull_None )
+        DepthState( Depth_Enable_LessEqual_Write_None )
+
+        VertexShader = compile vs_1_1 NormalMappedVS();
+        PixelShader = compile ps_2_a EnvironmentPS();
+    }
+    pass P1
     {
         AlphaState( AlphaBlend_SrcAlpha_InvSrcAlpha_Write_RGBA )
         RasterizerState( Rasterizer_Cull_None )
